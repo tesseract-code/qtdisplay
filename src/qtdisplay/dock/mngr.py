@@ -12,10 +12,10 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QSplitter,
 )
 
-from cross_platform.qt6_utils.qtdisplay.src.qtdisplay.dock.overlay import (
+from qtdisplay.dock.overlay import (
     DragGhost, DropOverlay, Zone, _drag, reset_drag_state,
 )
-from cross_platform.qt6_utils.qtdisplay.src.qtdisplay.dock.region import DockRegion
+from qtdisplay.dock.region import DockRegion
 from qtdisplay.dock.floating import FloatingDock
 
 

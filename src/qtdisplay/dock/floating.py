@@ -3,11 +3,9 @@ from __future__ import annotations
 import weakref
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtGui import QIcon, QSurfaceFormat
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QMainWindow, QWidget
 
-from image.gl.backend import GL
-from image.gl.utils import get_surface_format
 from qtdisplay.dock.region import DockRegion
 
 

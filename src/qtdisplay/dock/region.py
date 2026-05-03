@@ -16,7 +16,6 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPen
 from PyQt6.QtWidgets import (
     QSizePolicy,
-    QTabBar,
     QTabWidget,
     QWidget,
 )
@@ -83,7 +82,7 @@ class DockRegion(QTabWidget):
         self.currentChanged.connect(bar._sync_close_buttons)
 
         self.setDocumentMode(True)
-        self.setTabsClosable(False)   # buttons installed by DockTabBar
+        self.setTabsClosable(False)  # buttons installed by DockTabBar
         self.setMovable(False)
         self.setMinimumSize(60, 50)
         self.setSizePolicy(

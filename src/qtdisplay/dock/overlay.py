@@ -7,7 +7,7 @@ from PyQt6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import QApplication, QWidget, QLabel
 
 if TYPE_CHECKING:
-    from cross_platform.qt6_utils.qtdisplay.src.qtdisplay.dock.region import DockRegion
+    from qtdisplay.dock.region import DockRegion
 
 
 # ──────────────────────────────────────────────────────────────────────────────
