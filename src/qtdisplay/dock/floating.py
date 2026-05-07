@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import weakref
+from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QIcon
@@ -8,92 +9,106 @@ from PyQt6.QtWidgets import QMainWindow, QWidget
 
 from qtdisplay.dock.region import DockRegion
 
+if TYPE_CHECKING:
+    from qtdisplay.dock.mngr import DockManager
+
 
 class FloatingDock(QMainWindow):
     """
-    A detached panel created when a tab is dropped outside any dock region.
+    Detached dock window created when a panel is floated.
 
-    Holds a weak reference to the manager so it can notify it on close
-    without creating a retain cycle.
+    The window hosts a single DockRegion. It keeps only a weak reference to
+    the manager so floating windows do not extend the manager lifetime.
     """
 
     def __init__(
-            self,
-            widget: QWidget,
-            title: str,
-            icon: QIcon | None,
-            manager: 'DockManager',
+        self,
+        widget: QWidget,
+        title: str,
+        icon: QIcon | None,
+        manager: DockManager,
     ) -> None:
         super().__init__()
+
+        self._manager_ref = weakref.ref(manager)
+        self._cleaned_up = False
+
         self.setWindowTitle(title)
         if icon and not icon.isNull():
             self.setWindowIcon(icon)
 
-        self._manager_ref = weakref.ref(manager)
-
         region = DockRegion("floating", manager)
         region.add_panel(widget, title, icon)
-        self.setCentralWidget(region)
+        region.became_empty.connect(self._close_when_empty)
 
-        region.became_empty.connect(lambda: QTimer.singleShot(0, self.close))
+        self.setCentralWidget(region)
 
         w = max(widget.width(), 400)
         h = max(widget.height() + 32, 300)
         self.resize(w, h)
 
     @property
-    def manager(self) -> 'DockManager':
+    def manager(self) -> DockManager | None:
         return self._manager_ref()
 
-    # ── teardown ──────────────────────────────────────────────────────────────
+    @property
+    def region(self) -> DockRegion | None:
+        central = self.centralWidget()
+        return central if isinstance(central, DockRegion) else None
+
+    def _close_when_empty(self) -> None:
+        """
+        Close after the current signal stack unwinds.
+
+        Using a named slot avoids a lambda that strongly captures ``self`` and
+        makes cleanup/disconnect behavior easier to reason about.
+        """
+        QTimer.singleShot(0, self.close)
 
     def cleanup(self) -> None:
         """
-        Tear down the floating window and the :class:`DockRegion` it hosts.
+        Tear down the floating window and the DockRegion it hosts.
 
-        Call order
-        ----------
-        1. Retrieve the central :class:`DockRegion` and call its
-           :meth:`~DockRegion.cleanup` method, which cascades to the tab bar
-           and every contained tab widget.
-        2. Poison the manager weak reference so no code running after this
-           point can accidentally re-enter the partially-destroyed manager.
-
-        Intended to be called by the manager's own cleanup routine *before*
-        ``close()`` / ``deleteLater()`` so all resources are released while
-        every object is still fully alive.
-
-        This method is idempotent — calling it more than once is safe.
+        This method is idempotent.
         """
-        region = self.centralWidget()
-        if isinstance(region, DockRegion):
+        if self._cleaned_up:
+            return
+
+        self._cleaned_up = True
+
+        region = self.region
+        if region is not None:
+            try:
+                region.became_empty.disconnect(self._close_when_empty)
+            except (RuntimeError, TypeError):
+                pass
+
             region.cleanup()
 
-        # Poison the weak ref — manager() will now return None.
         self._manager_ref = lambda: None  # type: ignore[assignment]
 
     def closeEvent(self, event) -> None:
         """
-        Close the window, respecting non-closable tabs.
+        Close the floating window, respecting non-closable tabs.
 
-        Before allowing the window to close, every closable tab is closed
-        through the normal ``_request_close`` path (so :class:`CleanupTab`
-        widgets are torn down correctly).  If any non-closable tabs remain
-        afterwards the close event is ignored and the window stays open —
-        there is nowhere safe to send those widgets.
-
-        When all tabs are closable (the common case) the region becomes empty,
-        the manager is notified, and the window is destroyed as usual.
+        Closable tabs are closed through the normal region/tab-bar close path.
+        If non-closable tabs remain, the close is ignored.
         """
-        region = self.centralWidget()
-        if isinstance(region, DockRegion):
+        region = self.region
+        if region is not None:
             region.close_closable_tabs()
+
             if region.count() > 0:
-                # Non-closable tabs are still present — block the close.
                 event.ignore()
                 return
 
         mgr = self.manager
         if mgr is not None:
-            mgr._cleanup_floating(self)
+            # Prefer a public manager method if available.
+            unregister = getattr(mgr, "unregister_floating", None)
+            if callable(unregister):
+                unregister(self)
+            else:
+                mgr.unregister_floating(self)
+
         super().closeEvent(event)

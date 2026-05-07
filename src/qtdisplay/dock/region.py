@@ -12,7 +12,7 @@ from __future__ import annotations
 import weakref
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QPoint, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPen
 from PyQt6.QtWidgets import (
     QSizePolicy,
@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from qtdisplay.dock.tab_bar import DockTabBar
+from qtdisplay.dock.tab_bar import DockTabBar, DOCK_CLOSABLE_PROPERTY
 
 if TYPE_CHECKING:
     from qtdisplay.dock.mngr import DockManager
@@ -66,20 +66,18 @@ class DockRegion(QTabWidget):
         self._focused = False
 
         bar = DockTabBar()
-        bar.drag_initiated.connect(lambda i, p: manager.begin_drag(self, i, p))
+        bar.drag_initiated.connect(self._on_drag_initiated)
         bar.tabCloseRequested.connect(self._close_tab)
 
         # Forward split requests to the manager, which owns all layout logic.
-        bar.split_requested.connect(
-            lambda direction: self._on_split_requested(direction)
-        )
+        bar.split_requested.connect(self._on_split_requested)
 
         self.setTabBar(bar)
 
         # Keep the close button in sync with whichever tab is active.
         # DockTabBar.tabInserted handles newly added tabs; this signal covers
         # the user clicking a different tab after insertion.
-        self.currentChanged.connect(bar._sync_close_buttons)
+        self.currentChanged.connect(bar.sync_close_buttons)
 
         self.setDocumentMode(True)
         self.setTabsClosable(False)  # buttons installed by DockTabBar
@@ -94,7 +92,13 @@ class DockRegion(QTabWidget):
     def manager(self) -> DockManager | None:
         return self._manager_ref()
 
-    # ── split forwarding ──────────────────────────────────────────────────────
+    # ── manager forwarding ────────────────────────────────────────────────────
+
+    def _on_drag_initiated(self, index: int, pos: QPoint) -> None:
+        """Delegate a tear-off drag to the manager without strongly capturing it."""
+        mgr = self.manager
+        if mgr is not None:
+            mgr.begin_drag(self, index, pos)
 
     def _on_split_requested(self, direction: str) -> None:
         """
@@ -173,7 +177,7 @@ class DockRegion(QTabWidget):
         """
         bar = self.tabBar()
         if isinstance(bar, DockTabBar):
-            bar._close_all(self)
+            bar.close_all_tabs(self)
 
     # ── teardown ──────────────────────────────────────────────────────────────
 
@@ -199,6 +203,13 @@ class DockRegion(QTabWidget):
         bar = self.tabBar()
         if isinstance(bar, DockTabBar):
             bar.cleanup()
+
+        # 2. Disconnect Qt signals that may hold bound methods/lambdas alive.
+        for signal in (self.currentChanged, self.became_empty):
+            try:
+                signal.disconnect()
+            except (RuntimeError, TypeError):
+                pass
 
         # 3. Drop the manager reference so there is no accidental retain cycle.
         self._manager_ref = lambda: None  # type: ignore[assignment]
@@ -231,8 +242,7 @@ class DockRegion(QTabWidget):
         The close button is installed automatically by DockTabBar.tabInserted;
         no extra call is needed here.
         """
-        if not closable:
-            widget.setProperty("_dock_closable", False)
+        widget.setProperty(DOCK_CLOSABLE_PROPERTY, bool(closable))
 
         if icon and not icon.isNull():
             self.addTab(widget, icon, title)

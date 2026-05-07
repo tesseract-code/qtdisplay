@@ -6,7 +6,12 @@ Top-level dock manager built on QMainWindow.
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, QPoint, QEvent, QObject
+from dataclasses import dataclass
+from enum import Enum
+from typing import Iterable
+from uuid import uuid4
+
+from PyQt6.QtCore import Qt, QPoint, QEvent, QObject, pyqtSignal
 from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QSplitter,
@@ -20,19 +25,79 @@ from qtdisplay.dock.floating import FloatingDock
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Public API types
+# ──────────────────────────────────────────────────────────────────────────────
+
+DOCK_PANEL_ID_PROPERTY = "_dock_panel_id"
+
+class DockArea(str, Enum):
+    """Named, built-in regions in the dock workspace."""
+
+    LEFT = "left"
+    TOP = "top"
+    CENTER = "center"
+    BOTTOM = "bottom"
+    RIGHT = "right"
+
+    @classmethod
+    def coerce(cls, value: "DockArea | str") -> "DockArea":
+        try:
+            return value if isinstance(value, cls) else cls(str(value))
+        except ValueError as exc:
+            raise ValueError(
+                f"Unknown dock area {value!r}. "
+                f"Expected one of: {[area.value for area in cls]}"
+            ) from exc
+
+
+class DockSide(str, Enum):
+    """Side used when splitting a panel or region."""
+
+    LEFT = "left"
+    RIGHT = "right"
+    TOP = "top"
+    BOTTOM = "bottom"
+
+    @classmethod
+    def coerce(cls, value: "DockSide | str") -> "DockSide":
+        try:
+            return value if isinstance(value, cls) else cls(str(value))
+        except ValueError as exc:
+            raise ValueError(
+                f"Unknown dock side {value!r}. "
+                f"Expected one of: {[side.value for side in cls]}"
+            ) from exc
+
+
+@dataclass(frozen=True, slots=True)
+class PanelHandle:
+    """Stable handle returned when a panel is added to the dock."""
+
+    id: str
+    widget: QWidget
+    title: str
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Dock manager
 # ──────────────────────────────────────────────────────────────────────────────
 
 class DockManager(QMainWindow):
+    panel_added = pyqtSignal(QWidget)
+    panel_removed = pyqtSignal(QWidget)
+    panel_focused = pyqtSignal(QWidget)
+    panel_floated = pyqtSignal(QWidget)
+
     def __init__(
             self,
             title: str = "Dock Manager",
             size: tuple[int, int] = (1400, 860),
+            embedded: bool = True,
     ) -> None:
         super().__init__()
         self.setWindowTitle(title)
         self.resize(*size)
-        self.setWindowFlags(Qt.WindowType.Widget)
+        if embedded:
+            self.setWindowFlags(Qt.WindowType.Widget)
 
         self._ghost: DragGhost | None = None
         self._regions: dict[str, DockRegion] = {}
@@ -51,57 +116,63 @@ class DockManager(QMainWindow):
 
     def add_panel(
             self,
-            area: str,
+            area: DockArea | str,
             widget: QWidget,
             title: str,
             icon: QIcon | None = None,
             closable: bool = True,
-    ) -> None:
+            panel_id: str | None = None,
+    ) -> PanelHandle:
         """
-        Add *widget* to the named *area*.
+        Add *widget* to the named dock *area*.
 
-        Parameters
-        ----------
-        area:
-            One of the registered region names (``"center"``, ``"left"``, …).
-        widget:
-            The content widget to add as a new tab.
-        title:
-            Tab label.
-        icon:
-            Optional tab icon.
-        closable:
-            When ``False`` the tab's close button is suppressed and all
-            close actions (button, context menu, "Close All") skip this tab.
-            The widget can still be moved between regions via drag or split.
-            Defaults to ``True``.
+        The existing call shape remains valid::
+
+            manager.add_panel("center", widget, "Title")
+
+        ``area`` may be either a :class:`DockArea` or its string value.  The
+        returned :class:`PanelHandle` gives application code a stable, reusable
+        reference for later focus/move/close operations.
         """
-        region = self._regions.get(area)
+        area = DockArea.coerce(area)
+        region = self._regions.get(area.value)
         if region is None:
             raise ValueError(
-                f"Unknown area {area!r}.  "
+                f"Unknown area {area.value!r}.  "
                 f"Must be one of: {list(self._regions)}"
             )
+
+        get_prop = getattr(widget, "property", lambda _name: None)
+        set_prop = getattr(widget, "setProperty", lambda _name, _value: None)
+        pid = panel_id or get_prop(DOCK_PANEL_ID_PROPERTY) or uuid4().hex
+        set_prop(DOCK_PANEL_ID_PROPERTY, pid)
+
         region.add_panel(widget, title, icon, closable=closable)
         region.show()
 
-    def focus_panel(self, widget: QWidget) -> None:
-        """
-        Bring *widget*'s tab to the front and highlight its region.
+        handle = PanelHandle(str(pid), widget, title)
+        self.panel_added.emit(widget)
+        return handle
 
-        Searches registered regions first, then floating dock windows.
-        Does nothing if *widget* is not currently hosted in any dock.
+    def focus_panel(self, panel: QWidget | PanelHandle) -> bool:
         """
-        # Search the main layout regions.
+        Bring *panel* to the front and highlight its region.
+
+        Accepts either the original ``QWidget`` or the :class:`PanelHandle`
+        returned by :meth:`add_panel`.  Returns ``True`` when the panel is
+        currently hosted by this manager.
+        """
+        widget = panel.widget if isinstance(panel, PanelHandle) else panel
+
         for region in self._regions.values():
             idx = region.indexOf(widget)
             if idx >= 0:
                 region.setCurrentIndex(idx)
                 region.show()
                 self._set_focused_region(region)
-                return
+                self.panel_focused.emit(widget)
+                return True
 
-        # Search floating dock windows.
         for floating in self._floating:
             inner = floating.centralWidget()
             if isinstance(inner, DockRegion):
@@ -110,7 +181,101 @@ class DockManager(QMainWindow):
                     inner.setCurrentIndex(idx)
                     floating.raise_()
                     floating.activateWindow()
-                    return
+                    self.panel_focused.emit(widget)
+                    return True
+
+        return False
+
+    def panels(self) -> list[QWidget]:
+        """Return every panel widget currently owned by this manager."""
+        return [widget for region in self._iter_regions() for widget in self._widgets_in_region(region)]
+
+    def regions(self) -> dict[str, DockRegion]:
+        """Return a shallow copy of the registered dock regions by name."""
+        return dict(self._regions)
+
+    def remove_panel(self, panel: QWidget | PanelHandle) -> bool:
+        """Remove *panel* from its region without deleting the widget."""
+        located = self._locate_panel(panel)
+        if located is None:
+            return False
+
+        region, idx = located
+        widget = region.widget(idx)
+        region.removeTab(idx)
+        widget.setParent(None)
+        self._cleanup_empty_region(region)
+        self.panel_removed.emit(widget)
+        return True
+
+    def close_panel(self, panel: QWidget | PanelHandle) -> bool:
+        """Close *panel*, honoring the same cleanup path as tab close buttons."""
+        located = self._locate_panel(panel)
+        if located is None:
+            return False
+
+        region, idx = located
+        widget = region.widget(idx)
+        bar = region.tabBar()
+        if hasattr(bar, "request_close"):
+            bar.request_close(idx)
+        else:
+            region.removeTab(idx)
+            widget.deleteLater()
+        self._cleanup_empty_region(region)
+        self.panel_removed.emit(widget)
+        return True
+
+    def split_panel(
+            self,
+            panel: QWidget | PanelHandle,
+            direction: DockSide | str,
+    ) -> bool:
+        """Split the panel's current region and move *panel* to the new side."""
+        side = DockSide.coerce(direction)
+        located = self._locate_panel(panel)
+        if located is None:
+            return False
+
+        region, idx = located
+        region.setCurrentIndex(idx)
+        return self.split_region_with_current_tab(region, side)
+
+    def float_panel(
+            self,
+            panel: QWidget | PanelHandle,
+            gpos: QPoint | None = None,
+    ) -> bool:
+        """Detach *panel* into a floating dock window."""
+        located = self._locate_panel(panel)
+        if located is None:
+            return False
+
+        region, idx = located
+        widget = region.widget(idx)
+        self._float_panel_from_region(region, idx, gpos)
+        self.panel_floated.emit(widget)
+        return True
+
+    def _iter_regions(self) -> Iterable[DockRegion]:
+        for region in self._regions.values():
+            yield region
+        for floating in self._floating:
+            inner = floating.centralWidget()
+            if isinstance(inner, DockRegion):
+                yield inner
+
+    @staticmethod
+    def _widgets_in_region(region: DockRegion) -> list[QWidget]:
+        return [region.widget(i) for i in range(region.count())]
+
+    def _locate_panel(self, panel: QWidget | PanelHandle) -> tuple[DockRegion, int] | None:
+        widget = panel.widget if isinstance(panel, PanelHandle) else panel
+        for region in self._iter_regions():
+            idx = region.indexOf(widget)
+            if idx >= 0:
+                return region, idx
+        return None
 
     # ── layout ────────────────────────────────────────────────────────────────
 
@@ -152,7 +317,7 @@ class DockManager(QMainWindow):
 
     def _build_view_menu(self) -> None:
         vm = self.menuBar().addMenu("&View")
-        for name in ("left", "top", "bottom", "right"):
+        for name in (DockArea.LEFT.value, DockArea.TOP.value, DockArea.BOTTOM.value, DockArea.RIGHT.value):
             act = QAction(f"Show {name.title()} Panel", self, checkable=True)
             r = self._regions[name]
             act.toggled.connect(lambda v, rr=r: rr.setVisible(v))
@@ -325,9 +490,31 @@ class DockManager(QMainWindow):
         self._floating.append(win)
 
         # Ensure floating window is removed from list on close
-        win.destroyed.connect(lambda w=win: self._cleanup_floating(w))
+        win.destroyed.connect(lambda w=win: self.unregister_floating(w))
 
         self._cleanup_empty_region(src)
+
+    def _float_panel_from_region(
+            self,
+            region: DockRegion,
+            idx: int,
+            gpos: QPoint | None = None,
+    ) -> FloatingDock:
+        """Move a tab from *region*/*idx* into a new floating dock."""
+        widget = region.widget(idx)
+        title = region.tabText(idx)
+        icon = region.tabIcon(idx)
+        region.removeTab(idx)
+
+        win = FloatingDock(widget, title, icon, self)
+        if gpos is not None:
+            win.move(gpos - QPoint(win.width() // 2, 16))
+        win.show()
+        self._floating.append(win)
+        win.destroyed.connect(lambda w=win: self.unregister_floating(w))
+
+        self._cleanup_empty_region(region)
+        return win
 
     def _end_drag(self) -> None:
         QApplication.instance().removeEventFilter(self)
@@ -381,8 +568,8 @@ class DockManager(QMainWindow):
     def split_region_with_current_tab(
             self,
             region: DockRegion,
-            direction: str,          # "left" | "right" | "top" | "bottom"
-    ) -> None:
+            direction: DockSide | str,
+    ) -> bool:
         """
         Public entry-point used by the tab-bar context menu.
 
@@ -392,7 +579,7 @@ class DockManager(QMainWindow):
         an empty region).
         """
         if region.count() < 1:
-            return
+            return False
 
         idx    = region.currentIndex()
         widget = region.widget(idx)
@@ -401,13 +588,14 @@ class DockManager(QMainWindow):
 
         region.removeTab(idx)
 
+        side = DockSide.coerce(direction)
         _orient_map = {
-            "left":   (Qt.Orientation.Horizontal, "before"),
-            "right":  (Qt.Orientation.Horizontal, "after"),
-            "top":    (Qt.Orientation.Vertical,   "before"),
-            "bottom": (Qt.Orientation.Vertical,   "after"),
+            DockSide.LEFT:   (Qt.Orientation.Horizontal, "before"),
+            DockSide.RIGHT:  (Qt.Orientation.Horizontal, "after"),
+            DockSide.TOP:    (Qt.Orientation.Vertical,   "before"),
+            DockSide.BOTTOM: (Qt.Orientation.Vertical,   "after"),
         }
-        orientation, position = _orient_map[direction]
+        orientation, position = _orient_map[side]
 
         new_region = self._new_split_region()
         new_region.add_panel(widget, title, icon)
@@ -415,8 +603,9 @@ class DockManager(QMainWindow):
         self._insert_region_split(region, new_region, orientation, position)
         new_region.show()
 
-        # CRITICAL FIX: cleanup empty source region
+        # Cleanup empty source region.
         self._cleanup_empty_region(region)
+        return True
 
     def _new_split_region(self) -> DockRegion:
         """Create a new, uniquely-named DockRegion and register it."""
@@ -542,7 +731,7 @@ class DockManager(QMainWindow):
 
     # ── floating window cleanup ───────────────────────────────────────────────
 
-    def _cleanup_floating(self, window: FloatingDock) -> None:
+    def unregister_floating(self, window: FloatingDock) -> None:
         if window in self._floating:
             self._floating.remove(window)
 

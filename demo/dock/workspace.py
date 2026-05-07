@@ -1,9 +1,10 @@
 import os
+import time
 from pathlib import Path
 
 import numpy as np
 from PyQt6.QtCore import QUrl, Qt, QTimer
-from PyQt6.QtGui import QIcon, QPixmap, QColor, QSurfaceFormat, QDesktopServices
+from PyQt6.QtGui import QIcon, QPixmap, QSurfaceFormat, QDesktopServices
 from PyQt6.QtWidgets import (
     QFrame, QStatusBar, QHBoxLayout, QMessageBox
 )
@@ -15,29 +16,19 @@ from image.load.load import load_image
 from pycore.files import FileExtensionCategory, FileInfo
 from qtdisplay.dock.mngr import DockManager
 from qtgui.file.code.editor import CodeEditorWidget, CodeEditor, \
-    lang_from_extension
+    _LANG_TO_SYMBOLS
 from qtgui.pdf_viewer import PDFViewer
 from qtgui.terminal.widget import TerminalWidget
 from qtgui.file.watch.widget import DirectoryWidget
 from qtgui.pixmap import colorize_pixmap
 from qtgui.video.playback import VideoPlaybackWidget
-from qtgui.viewerVTK import ModelViewerWidget
+from qtgui.vtk_utils.viewer3D import ModelViewerWidget
 
 try:
     from qtgui.file.code.symbols import SymbolsWidget
     _SYMBOLS_AVAILABLE = True
 except ImportError:
     _SYMBOLS_AVAILABLE = False
-
-# Maps CodeEditor.language.name → symbols_view.load_source() language tag.
-# Plain Text is absent intentionally: missing key → clear the panel.
-_EDITOR_LANG_TO_SYMBOLS: dict[str, str] = {
-    "Python":     "python",
-    "SQL":        "sql",
-    "C / C++":    "cpp",
-    "JavaScript": "javascript",
-    "Markdown":   "markdown",
-}
 
 
 class WorkspaceManager(QFrame):
@@ -182,7 +173,7 @@ class WorkspaceManager(QFrame):
             self._sym_widget.clear()
             return
 
-        lang_tag = _EDITOR_LANG_TO_SYMBOLS.get(ed.language.name)
+        lang_tag = _LANG_TO_SYMBOLS.get(ed.language.name)
         if lang_tag is None:
             # Plain Text or an unsupported language
             self._sym_widget.clear()
@@ -221,7 +212,6 @@ class WorkspaceManager(QFrame):
         match info.category:
             case FileExtensionCategory.CODE:
                 self._open_in_editor(info.path)
-
             case FileExtensionCategory.IMAGE:
                 try:
                     buf, meta = load_image(info.path, backend=Backend.PILLOW)
@@ -367,10 +357,14 @@ if __name__ == "__main__":
     from qtcore.app import Application
 
     app = Application(argv=sys.argv)
+    app.show_splash(min_display_ms=500)
     app.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
     QSurfaceFormat.setDefaultFormat(get_surface_format())
     workspace = WorkspaceManager()
-    workspace.show()
+    workspace.showMaximized()
+
+    app.finish_splash(main_window=workspace.window())
 
     app.aboutToQuit.connect(workspace.close)
+
     sys.exit(app.exec())

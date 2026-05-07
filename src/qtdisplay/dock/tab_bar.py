@@ -22,6 +22,9 @@ from PyQt6.QtGui import QAction, QColor, QIcon, QPainter, QPen, QPalette
 from PyQt6.QtWidgets import QMenu, QPushButton, QStyle, QStyleOptionTab, QTabBar, QWidget
 
 
+DOCK_CLOSABLE_PROPERTY = "_dock_closable"
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Reorder ghost
 # ──────────────────────────────────────────────────────────────────────────────
@@ -155,7 +158,7 @@ class DockTabBar(QTabBar):
         """Called by Qt after every tab insertion — install the close button and tooltip."""
         super().tabInserted(index)
         self._install_close_button(index)
-        self._sync_close_buttons(self.currentIndex())
+        self.sync_close_buttons(self.currentIndex())
         self.setTabToolTip(index, self.tabText(index))  # ← added
 
     def setTabText(self, index: int, text: str) -> None:
@@ -166,7 +169,23 @@ class DockTabBar(QTabBar):
     def tabRemoved(self, index: int) -> None:
         """Re-sync after removal so the surviving current tab shows its button."""
         super().tabRemoved(index)
-        self._sync_close_buttons(self.currentIndex())
+        self.sync_close_buttons(self.currentIndex())
+
+    def request_close(self, index: int) -> None:
+        """Public close-request entry point for the owning DockRegion/manager."""
+        self._request_close(index)
+
+    def close_all_tabs(self, tw) -> None:
+        """Public entry point to close every closable tab in *tw*."""
+        self._close_all(tw)
+
+    def close_other_tabs(self, tw, keep_idx: int) -> None:
+        """Public entry point to close every closable tab except *keep_idx*."""
+        self._close_others(tw, keep_idx)
+
+    def sync_close_buttons(self, current_idx: int | None = None) -> None:
+        """Public entry point to refresh close-button visibility."""
+        self._sync_close_buttons(self.currentIndex() if current_idx is None else current_idx)
 
     @staticmethod
     def _tab_is_closable(tw, index: int) -> bool:
@@ -187,7 +206,7 @@ class DockTabBar(QTabBar):
             return True
         # property() returns None when the property has never been set.
         # Only an explicit False value means non-closable.
-        return widget.property("_dock_closable") is not False
+        return widget.property(DOCK_CLOSABLE_PROPERTY) is not False
 
     def _install_close_button(self, index: int) -> None:
         # Non-closable tabs never get a close button — skip entirely so there
@@ -424,7 +443,7 @@ class DockTabBar(QTabBar):
 
         self._drag_from = -1
         self._drop_at   = -1
-        self._sync_close_buttons(self.currentIndex())
+        self.sync_close_buttons(self.currentIndex())
         self.update()
 
     # ── paint ─────────────────────────────────────────────────────────────────
