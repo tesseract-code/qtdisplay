@@ -39,20 +39,20 @@ class ChartToolBar(StyledToolBar):
     def _setup_ui(self):
         """Set up the toolbar UI."""
         # Chart snapshot
-        snapshot_icon = _get_line_icon("camera-lens", self.iconSize())
+        snapshot_icon = _get_line_icon("camera-lens", self.iconSize(), self.palette().accent().color())
         self.snapshot_action = QAction(snapshot_icon, "Snapshot", self)
         self.snapshot_action.setToolTip("Save an image of the chart")
         self.addAction(self.snapshot_action)
 
         # Chart full view
-        fullscreen_icon = _get_line_icon("fullscreen", self.iconSize())
+        fullscreen_icon = _get_line_icon("fullscreen", self.iconSize(), self.palette().accent().color())
         self.full_screen_action = QAction(fullscreen_icon, "Full View", self)
         self.full_screen_action.setToolTip("Show or hide chart axes and labels")
         self.full_screen_action.setCheckable(True)
         self.addAction(self.full_screen_action)
 
         # Chart table
-        table_icon = _get_line_icon("table", self.iconSize())
+        table_icon = _get_line_icon("table", self.iconSize(), self.palette().accent().color())
         self.table_action = QAction(table_icon, "Data Table", self)
         self.table_action.setToolTip("Show or hide chart data table")
         self.table_action.setCheckable(True)
@@ -60,7 +60,7 @@ class ChartToolBar(StyledToolBar):
 
         self.addSeparator()
         # Chart settings
-        settings_icon = _get_line_icon("settings", self.iconSize())
+        settings_icon = _get_line_icon("settings", self.iconSize(), self.palette().accent().color())
         self.settings_action = QAction(settings_icon, "Settings", self)
         self.settings_action.setToolTip("Show chart settings menu")
         self.addAction(self.settings_action)
