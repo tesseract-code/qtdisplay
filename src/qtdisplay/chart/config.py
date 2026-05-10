@@ -6,7 +6,7 @@ from typing import Optional, Literal
 from PyQt6.QtCharts import QChart, QAbstractSeries, QAbstractAxis
 from PyQt6.QtCore import Qt
 
-from cross_platform.qt6_utils.qtgui.src.qtgui.color_picker import Color, to_qcolor
+from qtgui.color_picker import Color, to_qcolor
 from qtgui.form.group import form_group
 
 
