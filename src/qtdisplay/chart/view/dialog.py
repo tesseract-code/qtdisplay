@@ -20,7 +20,6 @@ from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QScrollArea, QApplication
 
-from qtcore.log.mngr import remote_log_manager
 from pycore.log.utils import list_lock_files, scan_all_ports
 from qtdisplay.chart.config import (
     ChartDisplaySettings,
@@ -256,16 +255,3 @@ class ChartDialog(NavigableDialog):
         # Emit all settings as structured data
         self.settings_applied.emit(chart_settings, series_settings, axes_settings)
         self.accept()
-
-
-if __name__ == '__main__':
-    list_lock_files()
-    scan_all_ports()
-    with remote_log_manager() as server:
-        app = QApplication(sys.argv)
-        dialog = ChartDialog(
-            series_settings={"Signal 1": SeriesDisplaySettings(color="red", ),
-                             "Signal 2": SeriesDisplaySettings(color="blue")})
-        dialog.show()
-        dialog.accepted.connect(lambda: app.exit(0))
-        sys.exit(app.exec())

@@ -8,9 +8,10 @@ from PyQt6.QtWidgets import QApplication, QToolBar
 from qtdisplay.chart.view.dialog import (ChartDisplaySettings)
 
 from cross_platform.dev.icons_legacy.svg_path import get_icon, IconType, IconManager
+from qtgui.style.toolbar import StyledToolBar
 
 
-class ChartToolBar(QToolBar):
+class ChartToolBar(StyledToolBar):
     """ Chart controller toolbar."""
 
     snapshotRequested = pyqtSignal()
