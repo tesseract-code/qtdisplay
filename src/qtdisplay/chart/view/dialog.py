@@ -29,7 +29,6 @@ from qtdisplay.chart.config import (
 from qtgui.dialogs import NavigableDialog
 from qtgui.form.widget import create_form_for_callable, \
     create_callable_from_dataclass_instance
-from cross_platform.dev.icons_legacy.svg_path import IconType
 
 
 class ChartDialog(NavigableDialog):
@@ -42,7 +41,7 @@ class ChartDialog(NavigableDialog):
             self,
             chart_settings: Optional[ChartDisplaySettings] = None,
             series_settings: Optional[Dict[str, SeriesDisplaySettings]] = None,
-            series_icons: Optional[Dict[str, IconType]] = None,
+            series_icons: Optional[Dict[str, str]] = None,
             axes_settings: Optional[Dict[Qt.AlignmentFlag, AxesDisplaySettings]] = None,
             parent: Optional[QWidget] = None
     ):
@@ -107,7 +106,7 @@ class ChartDialog(NavigableDialog):
         """)
         layout.addWidget(self.chart_form)
 
-        self.add_page(IconType.LINE_IMAGE_EDIT, "Appearance", page)
+        self.add_page("image-edit", "Appearance", page)
 
     # ========================================================================
     # AXES SETTINGS PAGES
@@ -123,7 +122,7 @@ class ChartDialog(NavigableDialog):
             self.axes_forms[alignment] = page
 
             display_name = self._get_axis_display_name(alignment)
-            self.add_page(IconType.LINE_RULER_2, display_name, page)
+            self.add_page("ruler-2", display_name, page)
 
     def _get_axis_display_name(self, alignment: Qt.AlignmentFlag) -> str:
         """
@@ -193,7 +192,7 @@ class ChartDialog(NavigableDialog):
             page = self._create_series_page(series_config)
             self.series_forms[series_name] = page
             series_icon = (self.series_icons.get(series_name) or
-                     IconType.LINE_BUBBLE_CHART)
+                     "bubble-chart")
             self.add_page(series_icon, f"Series: {series_name}", page)
 
     def _create_series_page(self, series_config: SeriesDisplaySettings) -> QWidget:

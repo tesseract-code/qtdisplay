@@ -21,10 +21,9 @@ from PyQt6.QtCore import pyqtSlot
 from qtdisplay.chart.config import (ChartDisplaySettings,
                                     SeriesDisplaySettings)
 from qtdisplay.chart.view.dialog import ChartDialog
-from cross_platform.dev.icons_legacy.svg_path import IconType
 
 # Type aliases
-type SeriesIconMap = dict[str, IconType]
+type SeriesIconMap = dict[str, str]
 
 
 class SettingsDialogControllerProtocol(Protocol):
@@ -120,7 +119,7 @@ class SettingsDialogMixin:
         }
 
     @staticmethod
-    def _get_series_icon(series_type: QAbstractSeries.SeriesType) -> IconType:
+    def _get_series_icon(series_type: QAbstractSeries.SeriesType) -> str:
         """
         Get icon for series type using optimized match/case.
 
@@ -130,20 +129,20 @@ class SettingsDialogMixin:
             case (QAbstractSeries.SeriesType.SeriesTypeBar |
                   QAbstractSeries.SeriesType.SeriesTypeStackedBar |
                   QAbstractSeries.SeriesType.SeriesTypePercentBar):
-                return IconType.LINE_BAR_CHART
+                return "bar-chart"
 
             case QAbstractSeries.SeriesType.SeriesTypePie:
-                return IconType.LINE_PIE_CHART
+                return "pie-chart"
 
             case QAbstractSeries.SeriesType.SeriesTypeScatter:
-                return IconType.LINE_BUBBLE_CHART
+                return "bubble-chart"
 
             case (QAbstractSeries.SeriesType.SeriesTypeLine |
                   QAbstractSeries.SeriesType.SeriesTypeSpline):
-                return IconType.LINE_LINE_CHART
+                return "line-chart"
 
             case QAbstractSeries.SeriesType.SeriesTypeArea:
-                return IconType.LINE_LINE_CHART  # Fallback
+                return "line-chart"  # Fallback
 
             case _:
-                return IconType.LINE_LINE_CHART  # Default
+                return "line-chart"  # Default
